@@ -1,0 +1,42 @@
+env:
+  DEBUG: 'napi:*'
+
+on:
+  push:
+    branches:
+      - '*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16
+          check-latest: true
+          cache: yarn
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: |
+            target
+            ${{ github.workspace }}/.cargo/registry
+          key: ${{ matrix.settings.target }}-cargo-cache
+      - name: Install ziglang
+        uses: goto-bus-stop/setup-zig@v1
+        with:
+          version: 0.9.1
+      - name: 'Install dependencies'
+        run: yarn install --immutable --mode=skip-build
+      - name: 'Build'
+        uses: addnab/docker-run-action@v3
+        with:
+          image: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine-zig
+          options: --user 0:0 -v ${{ github.workspace }}/.cargo/registry:/root/.cargo/registry -v ${{ github.workspace }}:/build -w /build
+          run: yarn build --target x86_64-unknown-linux-gnu --zig --zig-abi-suffix=2.17
+      - name: 'Test'
+        run: |
+          node ./worker.js
+          docker run --rm -v $(pwd):/work -w /work node:lts-slim yarn test
